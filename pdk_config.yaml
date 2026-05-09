@@ -1,0 +1,126 @@
+# ============================================================
+# Quantum Repeater Superconducting Qubit PDK — Global Config
+# pdk_config.yaml  |  Version 2.1.0
+# ============================================================
+
+pdk:
+  name: "QR_SC_PDK"
+  full_name: "Quantum Repeater Superconducting Qubit Process Design Kit"
+  version: "2.1.0"
+  created: "2025-01-01"
+  authors:
+    - "Quantum EDA Team"
+  license: "Academic Research"
+
+# ── Supported Processes ──────────────────────────────────────
+processes:
+  Al_Si_150nm:
+    description: "Aluminum on high-resistivity silicon, 150 nm Al thickness"
+    substrate: "Si"
+    substrate_resistivity_ohm_cm: ">10000"
+    substrate_thickness_um: 525
+    superconductor: "Al"
+    film_thickness_nm: 150
+    critical_temperature_K: 1.2
+    gap_energy_meV: 0.18         # 2Δ = 1.76 k_B T_c
+    sheet_resistance_ohm_sq: 0.016   # at 4K
+    Tc_degradation_factor: 1.0
+    junction_process: "Dolan_bridge"
+    min_feature_um: 0.2
+    min_junction_area_um2: 0.04      # 200nm × 200nm
+    max_junction_area_um2: 1.0
+
+  Nb_SiN_200nm:
+    description: "Niobium on silicon nitride membrane, 200 nm Nb"
+    substrate: "SiN"
+    substrate_thickness_um: 0.2      # membrane
+    superconductor: "Nb"
+    film_thickness_nm: 200
+    critical_temperature_K: 9.2
+    gap_energy_meV: 1.50
+    sheet_resistance_ohm_sq: 0.01
+    junction_process: "Manhattan"
+    min_feature_um: 0.3
+    min_junction_area_um2: 0.09
+
+  NbTiN_Si_100nm:
+    description: "NbTiN on silicon for kinetic inductance devices"
+    substrate: "Si"
+    superconductor: "NbTiN"
+    film_thickness_nm: 100
+    critical_temperature_K: 14.0
+    sheet_resistance_ohm_sq: 40.0    # high kinetic inductance
+    kinetic_inductance_pH_sq: 9.0
+    junction_process: "None"         # no JJ — KID / MKID use
+    min_feature_um: 0.1
+
+# ── Default Process Selection ─────────────────────────────────
+default_process: "Al_Si_150nm"
+
+# ── Global Design Constants ───────────────────────────────────
+constants:
+  speed_of_light_um_per_ns: 299792.458
+  vacuum_permittivity_fF_um: 8.854e-6
+  flux_quantum_Wb: 2.067833848e-15    # Φ₀
+  planck_reduced_eV_s: 6.582119569e-16
+  josephson_freq_per_uA: 483.597848   # MHz/µA (2e/h in GHz/µA)
+  charge_energy_scale: "EC = e²/2C"
+  josephson_energy_scale: "EJ = Φ₀ Ic / 2π"
+
+# ── Qubit Target Specifications ───────────────────────────────
+qubit_targets:
+  transmon:
+    frequency_range_GHz: [4.0, 6.5]
+    anharmonicity_MHz: [-200, -350]
+    T1_target_us: ">100"
+    T2_target_us: ">200"
+    EJ_over_EC_range: [40, 80]
+    EC_target_MHz: [200, 300]
+    EJ_target_GHz: [10, 25]
+    readout_dispersive_shift_MHz: [-1.0, -5.0]
+    readout_resonator_freq_GHz: [6.0, 8.0]
+    coupling_strength_g_MHz: [50, 150]
+
+  tunable_transmon:
+    frequency_range_GHz: [3.5, 6.5]
+    max_frequency_tunability_GHz: 1.5
+    flux_sensitivity_GHz_per_Phi0: 1.0
+    SQUID_asymmetry_d: "<0.1"        # |EJ1-EJ2|/(EJ1+EJ2)
+
+# ── Resonator Target Specifications ──────────────────────────
+resonator_targets:
+  readout_resonator:
+    type: "CPW_lambda_quarter"
+    frequency_range_GHz: [6.0, 8.5]
+    quality_factor_internal: ">1e5"
+    quality_factor_coupling: [1000, 5000]
+    impedance_ohm: 50
+    line_width_um: 10
+    gap_um: 6
+
+  memory_resonator:
+    type: "CPW_lambda_half"
+    frequency_range_GHz: [5.0, 7.0]
+    quality_factor_internal: ">5e5"
+    impedance_ohm: 50
+
+# ── CPW Global Defaults ───────────────────────────────────────
+cpw_defaults:
+  Z0_ohm: 50
+  effective_permittivity: 6.45        # Al on Si (εr=11.9), CPW geometry
+  velocity_factor: 0.394              # v = c/sqrt(εeff)
+  loss_tangent_Si: 2.0e-6             # High-ρ Si at mK
+  loss_tangent_SiN: 1.0e-4
+
+# ── Grid and Snapping ─────────────────────────────────────────
+grid:
+  resolution_nm: 1                    # minimum GDS database unit
+  snap_grid_nm: 10                    # layout snap grid
+  dbu: 0.001                          # µm per database unit
+
+# ── Output Settings ───────────────────────────────────────────
+output:
+  gds_units: "um"
+  gds_precision: 1e-9
+  default_export_format: "gds"
+  supported_formats: ["gds", "dxf", "oas", "svg", "png"]

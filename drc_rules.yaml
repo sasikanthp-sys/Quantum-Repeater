@@ -1,0 +1,136 @@
+# ============================================================
+# design_rules/drc_rules.yaml
+# Design Rule Check (DRC) Constraints — Al/Si 150nm Process
+# ============================================================
+
+process: "Al_Si_150nm"
+version: "2.1.0"
+
+# ──────────────────────────────────────────────────────────────
+# BASE_METAL (Layer 1) — CPW, Qubits, Ground Plane
+# ──────────────────────────────────────────────────────────────
+BASE_METAL:
+  min_width_um: 2.0           # absolute minimum; CPW center line ≥10 µm recommended
+  min_gap_um: 2.0             # minimum space between metal features
+  min_cpw_width_um: 5.0       # CPW center conductor minimum
+  recommended_cpw_width_um: 10.0
+  min_cpw_gap_um: 4.0         # CPW signal-to-ground gap
+  recommended_cpw_gap_um: 6.0
+  max_width_um: 2000.0        # large pads OK
+  min_enclosure_um: 5.0       # metal must enclose JJ overlap by ≥5 µm
+  corner_rounding_um: 1.0     # recommended for field uniformity
+  min_bend_radius_um: 20.0    # CPW bend radius (>2× width recommended)
+  flux_hole_min_diameter_um: 2.0
+  flux_hole_max_diameter_um: 10.0
+  flux_hole_spacing_um: 50.0  # periodic flux-trapping holes in gnd plane
+  flux_hole_keepout_from_cpw_um: 20.0
+
+# ──────────────────────────────────────────────────────────────
+# JOSEPHSON JUNCTION (Layers 2, 2/1, 2/2)
+# ──────────────────────────────────────────────────────────────
+JOSEPHSON_JUNCTION:
+  min_jj_area_um2: 0.04       # 200 nm × 200 nm minimum
+  max_jj_area_um2: 1.0        # 1 µm × 1 µm maximum for single JJ
+  min_jj_width_nm: 200        # EBL-limited minimum
+  max_jj_width_nm: 1000
+  min_overlap_width_nm: 150   # minimum overlap for reliable tunnel junction
+  bridge_width_nm: 200        # Dolan bridge width (underhang)
+  bridge_gap_nm: 100          # clearance under Dolan bridge
+  min_finger_width_um: 0.2    # for Manhattan geometry
+  min_jj_to_jj_spacing_um: 2.0
+  min_jj_to_metal_spacing_um: 1.0
+  angle1_deg: -17             # first evaporation angle
+  angle2_deg: +17             # second evaporation angle
+  shadow_offset_nm: 200       # lateral shift due to angle evaporation
+  SQUID_loop_area_range_um2: [1.0, 25.0]   # for tunable transmon
+  target_SQUID_inductance_pH: [50, 500]
+
+# ──────────────────────────────────────────────────────────────
+# AIR BRIDGES (Layer 5)
+# ──────────────────────────────────────────────────────────────
+AIRBRIDGE:
+  min_span_um: 15.0            # minimum bridge span
+  max_span_um: 50.0
+  min_foot_width_um: 5.0       # contact pad width at each end
+  min_foot_length_um: 3.0
+  clearance_to_cpw_surface_nm: 300   # air gap (dielectric release)
+  min_bridge_width_um: 5.0
+  max_bridge_width_um: 20.0
+  min_bridge_spacing_um: 50.0  # between consecutive bridges on same CPW
+  bridge_period_max_um: 200.0  # place bridge at least every 200 µm on CPW
+
+# ──────────────────────────────────────────────────────────────
+# BOND PADS (Layer 7)
+# ──────────────────────────────────────────────────────────────
+BOND_PAD:
+  min_size_um: 80.0            # 80 × 80 µm minimum for wire bonding
+  recommended_size_um: 100.0
+  min_spacing_um: 100.0        # pad edge to pad edge
+  min_clearance_from_active_um: 200.0
+  min_from_chip_edge_um: 150.0
+  min_taper_length_um: 50.0    # taper from CPW to bond pad
+
+# ──────────────────────────────────────────────────────────────
+# CAPACITOR PADS — Interdigitated & Parallel Plate
+# ──────────────────────────────────────────────────────────────
+CAPACITOR:
+  interdigitated:
+    min_finger_width_um: 5.0
+    min_finger_gap_um: 5.0
+    min_finger_length_um: 100.0
+    max_fingers: 20
+    recommended_finger_width_um: 10.0
+    recommended_finger_gap_um: 6.0
+
+  parallel_plate:
+    top_plate_min_um: 10.0
+    bottom_plate_extension_um: 2.0  # bottom must extend beyond top by ≥2 µm
+    max_area_um2: 10000.0            # limit to avoid large parasitic losses
+
+# ──────────────────────────────────────────────────────────────
+# QUBIT-LEVEL DESIGN RULES
+# ──────────────────────────────────────────────────────────────
+QUBIT:
+  min_transmon_pad_width_um: 100.0
+  min_transmon_pad_length_um: 400.0
+  min_pad_gap_um: 50.0          # gap between transmon pads (sets EC)
+  recommended_pad_gap_um: 100.0
+  min_pad_to_gnd_clearance_um: 20.0
+  max_pad_to_gnd_clearance_um: 200.0
+  min_jj_to_pad_distance_um: 2.0
+
+  # Capacitance targets (from FEM or conformal map)
+  target_pad_capacitance_fF: [50, 120]   # EC range 200-300 MHz
+  target_shunt_capacitance_fF: [60, 90]
+  target_coupling_capacitance_fF: [1, 10] # qubit-resonator Cg
+
+# ──────────────────────────────────────────────────────────────
+# RESONATOR RULES
+# ──────────────────────────────────────────────────────────────
+RESONATOR:
+  min_length_um: 2000.0        # λ/4 @ 6 GHz ≈ 5 mm; enforce min 2 mm
+  meander_min_segment_um: 50.0
+  meander_min_turn_radius_um: 20.0
+  min_resonator_to_resonator_um: 100.0   # coupling suppression
+  min_resonator_to_qubit_um: 5.0         # coupling gap sets g
+  recommended_coupling_gap_um: 10.0
+
+# ──────────────────────────────────────────────────────────────
+# KEEPOUT ZONES
+# ──────────────────────────────────────────────────────────────
+KEEPOUT:
+  qubit_exclusion_radius_um: 500.0     # no metal except designed features
+  jj_exclusion_radius_um: 10.0
+  bond_pad_exclusion_um: 150.0
+  chip_edge_keepout_um: 200.0          # no active features near dicing
+  dicing_lane_width_um: 100.0
+
+# ──────────────────────────────────────────────────────────────
+# ELECTRICAL CONNECTIVITY
+# ──────────────────────────────────────────────────────────────
+CONNECTIVITY:
+  min_via_overlap_um: 2.0       # overlap for reliable contact
+  max_stub_length_um: 50.0      # dangling stubs cause reflections
+  ground_stitch_max_period_um: 500.0   # ground stitching frequency
+  island_min_area_um2: 4.0      # floating metal islands > 4 µm² flagged
+  unconnected_metal_warning: true

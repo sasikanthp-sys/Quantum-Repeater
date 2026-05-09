@@ -1,0 +1,88 @@
+# ============================================================
+# design_rules/drc_klayout.lydrc
+# KLayout DRC Script for Quantum Repeater Superconducting PDK
+# Run: klayout -b -r drc_klayout.lydrc -rd input=layout.gds
+# ============================================================
+
+# Layer definitions (GDS layer numbers)
+BASE_METAL  = input(1, 0)
+JJ_BOT      = input(2, 0)
+JJ_TOP      = input(2, 2)
+JJ_BARRIER  = input(2, 1)
+DIELECTRIC  = input(4, 0)
+AIRBRIDGE   = input(5, 0)
+BOND_PAD    = input(7, 0)
+FLUXHOLES   = input(10, 0)
+KEEPOUT     = input(100, 0)
+DICING      = input(202, 0)
+
+report("Quantum Repeater PDK DRC — Al/Si 150nm Process v2.1.0")
+
+# ══════════════════════════════════════════════════════════════
+# BASE_METAL Rules
+# ══════════════════════════════════════════════════════════════
+BASE_METAL.width(2.0.um).output("M1.W1", "BASE_METAL: min width 2 µm violation")
+BASE_METAL.space(2.0.um).output("M1.S1", "BASE_METAL: min space 2 µm violation")
+BASE_METAL.space(4.0.um, euclidian).output("M1.S2", "CPW gap must be ≥ 4 µm (Euclidian)")
+(BASE_METAL & KEEPOUT).output("M1.K1", "BASE_METAL inside KEEPOUT zone")
+
+# Chip edge keep-out
+chip_boundary = extent(BASE_METAL + BOND_PAD + JJ_BOT).sized(200.um)
+BASE_METAL.not_inside(chip_boundary).output("M1.E1", "Metal within 200 µm of chip edge")
+
+# Ground plane flux holes
+FLUXHOLES.width(2.0.um).output("FH.W1",  "Flux hole diameter < 2 µm")
+FLUXHOLES.width(10.0.um, greater_than).output("FH.W2", "Flux hole diameter > 10 µm")
+FLUXHOLES.space(10.0.um).output("FH.S1", "Flux hole spacing < 10 µm")
+# Flux holes must be inside ground plane
+FLUXHOLES.not_inside(BASE_METAL).output("FH.L1", "Flux holes must be inside BASE_METAL")
+
+# ══════════════════════════════════════════════════════════════
+# JOSEPHSON JUNCTION Rules
+# ══════════════════════════════════════════════════════════════
+JJ_overlap = JJ_BOT & JJ_TOP      # actual tunnel junction area
+
+JJ_overlap.width(0.15.um).output("JJ.W1", "JJ: min overlap width 150 nm violation")
+JJ_overlap.area(0.04.um2).output("JJ.A1", "JJ: area < 0.04 µm² (too small)")
+JJ_overlap.area(1.0.um2, greater_than).output("JJ.A2", "JJ: area > 1.0 µm² (too large)")
+
+JJ_BOT.space(2.0.um).output("JJ.S1", "JJ electrodes: min separation 2 µm")
+JJ_BOT.not_inside(BASE_METAL.sized(5.0.um)).output("JJ.C1", 
+  "JJ must be enclosed by BASE_METAL with ≥ 5 µm margin")
+
+# ══════════════════════════════════════════════════════════════
+# AIR BRIDGE Rules
+# ══════════════════════════════════════════════════════════════
+AIRBRIDGE.width(5.0.um).output("AB.W1", "Airbridge: width < 5 µm")
+AIRBRIDGE.space(50.0.um).output("AB.S1", "Airbridge: spacing < 50 µm")
+# Bridges must cross (intersect) BASE_METAL on both sides — check feet
+AB_feet = AIRBRIDGE & BASE_METAL
+AB_feet.width(3.0.um).output("AB.F1", "Airbridge foot contact < 3 µm")
+
+# ══════════════════════════════════════════════════════════════
+# BOND PAD Rules
+# ══════════════════════════════════════════════════════════════
+BOND_PAD.width(80.0.um).output("BP.W1", "Bond pad: dimension < 80 µm")
+BOND_PAD.space(100.0.um).output("BP.S1", "Bond pad: spacing < 100 µm")
+BOND_PAD.not_inside(chip_boundary.sized(-200.um)).output("BP.E1",
+  "Bond pad too close to chip edge (< 150 µm required)")
+
+# ══════════════════════════════════════════════════════════════
+# FLOATING METAL CHECK
+# ══════════════════════════════════════════════════════════════
+all_metal  = BASE_METAL + JJ_BOT + JJ_TOP + AIRBRIDGE + BOND_PAD
+small_metal = all_metal.select_by_area(0..4.0.um2)
+small_metal.output("FL.1", "Floating metal island < 4 µm² — potential disconnection")
+
+# ══════════════════════════════════════════════════════════════
+# DICING LANE CLEARANCE
+# ══════════════════════════════════════════════════════════════
+dicing_exclusion = DICING.sized(100.0.um)
+(BASE_METAL & dicing_exclusion).output("DC.1", "Metal too close to dicing lane")
+
+# ══════════════════════════════════════════════════════════════
+# SUMMARY
+# ══════════════════════════════════════════════════════════════
+# Run KLayout in batch mode:
+#   klayout -b -r drc_klayout.lydrc -rd input=my_chip.gds -rd report=drc_out.lyrdb
+# View report: klayout my_chip.gds -m drc_out.lyrdb

@@ -1,0 +1,143 @@
+# ============================================================
+# simulations/sim_config.yaml
+# Simulation Configuration — Quantum Repeater Node PDK
+# ============================================================
+
+# ── EM Simulation Settings ────────────────────────────────────
+em_simulation:
+  solver: "ANSYS_HFSS"    # "ANSYS_HFSS" | "Sonnet" | "OpenEMS"
+  mesh_refinement: "adaptive"
+  max_passes: 20
+  delta_S: 0.002           # convergence criterion (S-parameter change)
+  frequency_sweep:
+    type: "interpolating"
+    fmin_GHz: 4.0
+    fmax_GHz: 9.0
+    n_points: 201
+  ports:
+    - type: "wave_port"
+      name: "input_feedline"
+      impedance_ohm: 50
+    - type: "wave_port"
+      name: "output_feedline"
+      impedance_ohm: 50
+  boundaries:
+    substrate: "radiation"
+    ground_plane: "perfect_E"
+    chip_surface: "lumped_RLC"  # for loss tangent
+  material_overrides:
+    Al_superconductor:
+      model: "surface_impedance"
+      Rs_mOhm: 0.01
+      Xs_mOhm: 0.5           # kinetic reactance
+    Si_substrate:
+      loss_tangent: 2.0e-6
+
+  # Eigenmode solver for qubit frequency extraction
+  eigenmode:
+    n_modes: 10
+    min_freq_GHz: 3.0
+    max_freq_GHz: 9.0
+    participation_ratio_analysis: true  # EPR method
+
+# ── EPR (Energy Participation Ratio) Analysis ─────────────────
+epr_analysis:
+  enabled: true
+  tool: "pyEPR"             # https://github.com/zlatko-minev/pyEPR
+  junction_inductance_pH: 12.0    # from JJ area
+  junction_capacitance_fF: 4.05
+  modes_to_analyze: [0, 1, 2, 3]
+  loss_channels:
+    - name: "substrate_TLS"
+      participation_factor: 0.001
+      loss_tangent: 2.0e-6
+    - name: "metal_surface"
+      participation_factor: 0.0001
+      loss_tangent: 1.0e-3
+    - name: "JJ_barrier"
+      participation_factor: 0.01
+      loss_tangent: 1.0e-4
+
+# ── Qubit Parameter Extraction ────────────────────────────────
+qubit_extraction:
+  method: "EPR"            # "EPR" | "blackbox_quantization" | "BBQ"
+  target_EC_MHz: [200, 300]
+  target_EJ_over_EC: [40, 80]
+  target_anharmonicity_MHz: [-200, -350]
+  target_f01_GHz: [4.0, 6.5]
+
+# ── SPICE / Circuit Simulation ────────────────────────────────
+spice_simulation:
+  solver: "ngspice"         # "ngspice" | "Qucs-S" | "HSPICE"
+  analyses:
+    - type: "ac"
+      fstart_GHz: 4.0
+      fstop_GHz: 8.0
+      n_points: 1000
+    - type: "transient"
+      tstep_ps: 10
+      tstop_ns: 1000
+      use_ic: true
+    - type: "noise"
+      fstart_GHz: 4.0
+      fstop_GHz: 8.0
+  nonlinear_JJ: true        # Use RCSJ model (vs linear inductor)
+  temperature_K: 0.020      # 20 mK
+
+# ── Quantum Master Equation Simulation ────────────────────────
+quantum_simulation:
+  framework: "QuTiP"        # "QuTiP" | "Qiskit-Dynamics" | "QuantumOptics.jl"
+  n_fock: 10                # photon number truncation
+  n_qlevels: 3              # qubit levels (include |2⟩ for transmon)
+  T1_us: 100.0
+  T2_us: 200.0
+  kappa_MHz: 2.0            # readout cavity decay rate
+  n_thermal: 0.001          # thermal photon occupancy at 20 mK
+  simulations:
+    - name: "rabi_chevron"
+      type: "time_domain"
+      drive_freqs_GHz: {start: 4.7, stop: 5.3, n: 50}
+      pulse_lengths_ns: {start: 0, stop: 500, n: 100}
+    - name: "T1_decay"
+      type: "relaxation"
+      t_max_us: 300
+      n_points: 300
+    - name: "ramsey"
+      type: "coherence"
+      delay_max_us: 200
+    - name: "dispersive_readout"
+      type: "readout_fidelity"
+      readout_time_ns: 300
+      n_shots: 10000
+
+# ── Fabrication Parameter Sweeps ──────────────────────────────
+parameter_sweeps:
+  jj_area_sweep:
+    name: "JJ area vs EJ"
+    variable: "jj_area_um2"
+    range: [0.05, 0.5]
+    n_points: 20
+    output: "EJ_GHz"
+
+  pad_gap_sweep:
+    name: "Pad gap vs EC"
+    variable: "pad_gap_um"
+    range: [40, 160]
+    n_points: 20
+    output: "EC_MHz"
+
+  cpw_width_sweep:
+    name: "CPW width vs impedance"
+    variable: "line_width_um"
+    range: [5, 30]
+    n_points: 10
+    output: "Z0_ohm"
+
+# ── Output Formats ────────────────────────────────────────────
+outputs:
+  directory: "./sim_results"
+  formats: ["hdf5", "csv", "json", "png"]
+  save_field_plots: true
+  save_participation_ratios: true
+  save_spice_waveforms: true
+  save_quantum_trajectories: false   # large files

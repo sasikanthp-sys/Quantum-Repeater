@@ -1,0 +1,202 @@
+* ============================================================
+* models/spice/jj_rcsj.cir
+* RCSJ (Resistively and Capacitively Shunted Junction) Model
+* Josephson Junction SPICE Subcircuit
+* Compatible with: SPICE3, ngspice, Qucs-S
+* ============================================================
+*
+* Model Overview:
+*   The RCSJ model represents a JJ as:
+*     - Ideal Josephson element (nonlinear inductor/phase source)
+*     - Shunt resistance Rn (quasiparticle tunneling)
+*     - Shunt capacitance Cjj (dielectric barrier capacitance)
+*
+* Josephson current:  I = Ic × sin(δ)
+* Phase dynamics:     ℏ/2e × dδ/dt = V
+* Stewart-McCumber parameter: βc = 2π Ic Rn² Cjj / Φ₀
+*   βc << 1: overdamped (no hysteresis) — preferred for fast reset
+*   βc >> 1: underdamped (hysteretic)   — used for latching logic
+*
+* For transmon qubits: βc ≈ 0.1-1 (slightly underdamped)
+*
+* Parameters (pass as .param):
+*   Ic   = critical current [A]
+*   Rn   = normal-state resistance [Ω]
+*   Cjj  = junction capacitance [F]
+*   Phi0 = flux quantum = 2.067833848e-15 Wb
+*   T    = temperature [K] (for thermal noise)
+*
+* ============================================================
+
+.subckt JJ_RCSJ  anode cathode PARAMS:
++  Ic=300n        
++  Rn=8000        
++  Cjj=4.05f      
++  Phi0=2.0678e-15
++  T=0.020        
+
+* ── Node definitions ──────────────────────────────────────────
+* anode    — positive terminal (connects to island A)
+* cathode  — negative terminal (connects to island B)
+* phi_node — internal node tracking Josephson phase δ
+* vj_node  — voltage across junction
+
+* ── Junction voltage ─────────────────────────────────────────
+* V_junction = V(anode) - V(cathode)
+Eairth  vj_node 0 anode cathode 1
+
+* ── Phase integrator: dδ/dt = (2e/ℏ) × V = (2π/Φ₀) × V ─────
+* δ(t) = (2π/Φ₀) ∫ V(t) dt
+* Implemented as: Gphase integrates Ij through Cphase
+* where Cphase = Φ₀/(2π), so V_phase(t) = (1/Cphase) ∫ I dt = δ(t)
+Cphase phi_node 0 {Phi0/(2*3.14159265)}
+Gphase 0 phi_node vj_node 0 1    
+
+* ── Josephson supercurrent: Ij = Ic × sin(δ) ─────────────────
+* Implemented as voltage-controlled current source
+Gsup anode cathode VALUE={Ic*sin(V(phi_node))}
+
+* ── Quasiparticle resistance (normal channel) ────────────────
+Rqp  anode cathode {Rn}
+
+* ── Junction capacitance ─────────────────────────────────────
+Cbar anode cathode {Cjj}
+
+* ── Thermal Johnson noise source (T > 0) ─────────────────────
+* Noise power: Sn = 4 kB T / Rn   [A²/Hz]
+* Represented as current noise source
+* (ngspice uses .noise analysis; this is a reminder for noise sim)
+*   Inoise: Gaussian white noise with PSD = 4*kB*T/Rn
+
+* ── Initial condition ────────────────────────────────────────
+.ic V(phi_node)=0     
+
+.ends JJ_RCSJ
+
+
+* ============================================================
+* Transmon Qubit SPICE Model
+* models/spice/transmon.cir
+* ============================================================
+*
+* Circuit: Two islands connected by RCSJ JJ and shunt capacitor
+* Island A — JJ — Island B
+* Island A, B coupled to feedline via coupling capacitors Cg
+*
+* This is the CLASSICAL circuit model; for quantum behavior
+* see models/hamiltonian/transmon_ham.py
+*
+* ============================================================
+
+.subckt TRANSMON  drive_port readout_port gnd PARAMS:
++  f01_GHz=5.0
++  alpha_MHz=250
++  Cs_fF=80
++  Cg_fF=3.5
++  Ic_nA=120
++  Rn_ohm=9000
+
+* Derived parameters
+.param EC_GHz={alpha_MHz*1e-3}
+.param EJ_GHz={(f01_GHz + EC_GHz)**2 / (8*EC_GHz)}
+.param C_total_fF={1e15 * (1.602e-19)**2 / (2 * EC_GHz*1e9 * 6.626e-34)}
+.param Cjj_fF={C_total_fF - Cs_fF}
+
+* ── Qubit islands ────────────────────────────────────────────
+* Island_A and Island_B connected by JJ
+X_JJ  island_A island_B JJ_RCSJ
++      Ic={Ic_nA*1e-9}
++      Rn={Rn_ohm}
++      Cjj={Cjj_fF*1e-15}
+
+* Shunt capacitor across islands
+Cshunt island_A island_B {Cs_fF*1e-15}
+
+* ── Coupling to readout resonator ────────────────────────────
+* Voltage divider: readout port → Cg → island_A
+Ccoupl readout_port island_A {Cg_fF*1e-15}
+
+* ── Coupling to drive line ───────────────────────────────────
+Cdrive drive_port island_A {0.5f}
+
+* ── Ground island B ──────────────────────────────────────────
+Rgnd island_B gnd 1m    $ small resistor for DC path
+
+.ends TRANSMON
+
+
+* ============================================================
+* Readout Resonator SPICE Model
+* ============================================================
+
+.subckt CPW_RESONATOR  input_port output_port gnd PARAMS:
++  f_GHz=6.8
++  Z0=50
++  Qi=1e5
++  Qc=3000
++  mode=1     $ 1=quarter-wave, 2=half-wave
+
+* Lumped equivalent of λ/4 resonator:
+*   Lr Cr series tank at resonance
+*   ω₀ = 1/√(Lr Cr)
+*   Z_tank = Lr * ω₀ / Qr at resonance
+
+.param omega0={2*3.14159265*f_GHz*1e9}
+.param Ql={1/(1/Qi + 1/Qc)}
+.param Cr={1/(omega0*Z0)}
+.param Lr={1/(omega0**2 * Cr)}
+.param Rr={Lr*omega0/Qi}       $ internal loss
+
+* ── Series RLC resonator ─────────────────────────────────────
+Lr  int_a int_b {Lr}
+Cr  int_b int_c {Cr}
+Rr  int_c gnd   {Rr}
+
+* ── Coupling capacitor to input feedline ─────────────────────
+.param Cc_fF={1e15/(Qc*omega0*Z0)}
+Cc_in  input_port int_a {Cc_fF*1e-15}
+
+* ── Output coupling (for transmission measurement) ───────────
+Cc_out int_a output_port {Cc_fF*1e-15}
+
+* ── Feedline terminations ─────────────────────────────────────
+Rfeed_in  input_port  gnd {Z0}
+Rfeed_out output_port gnd {Z0}
+
+.ends CPW_RESONATOR
+
+
+* ============================================================
+* Top-level Single Qubit + Resonator Testbench
+* ============================================================
+
+.title Transmon-Resonator Dispersive Readout Simulation
+
+.param f_qubit=5.0G
+.param f_readout=6.8G
+.param g_MHz=80        $ qubit-resonator coupling strength
+
+* Qubit
+X_Q  Vdrive Vreadout_qb GND  TRANSMON
++     f01_GHz=5.0  alpha_MHz=250  Cs_fF=80  Cg_fF=3.5
++     Ic_nA=120  Rn_ohm=9000
+
+* Readout resonator
+X_R  Vreadout_qb Vout GND  CPW_RESONATOR
++     f_GHz=6.8  Z0=50  Qi=1e5  Qc=3000
+
+* Drive signal
+Vdrive  Vdrive GND AC 1 SIN(0 1n {f_qubit})
+
+* Output load
+Rload Vout GND 50
+
+* ── Analysis ─────────────────────────────────────────────────
+.ac dec 100 4G 8G          $ S21 frequency sweep
+.tran 0.01n 100n           $ time-domain Rabi oscillation
+.noise V(Vout) Vdrive dec 100 4G 8G
+
+* ── Output ───────────────────────────────────────────────────
+.print ac Vdb(Vout) Vphase(Vout)
+.print tran V(Vdrive) V(Vout) V(island_A)
+.end

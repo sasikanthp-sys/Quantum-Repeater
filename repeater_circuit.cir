@@ -1,0 +1,187 @@
+* ============================================================
+* models/spice/repeater_circuit.cir
+* Full 4-Qubit Quantum Repeater Node — SPICE Netlist
+* ============================================================
+*
+* Architecture:
+*   - 4 transmon qubits (Q0–Q3)
+*   - 4 readout resonators (RO0–RO3) with Purcell filters (PF0–PF3)
+*   - Tunable SQUID couplers between adjacent qubits
+*   - BSM circuit (microwave hybrid + 2 readout resonators)
+*   - Quantum memory bus resonator
+*   - Classical drive and readout feedlines
+*
+* Simulation modes:
+*   .ac   — S-parameter frequency sweep (VNA simulation)
+*   .tran — time-domain pulse / gate simulation
+*
+* ============================================================
+
+.title 4-Qubit Quantum Repeater Node
+
+* ── Include subcircuit definitions ──────────────────────────
+.include "jj_rcsj.cir"
+* .include "transmon.cir"   (embedded below as inline subckt)
+
+* ── Global parameters ────────────────────────────────────────
+.param Z0=50          $ System impedance (Ω)
+.param T=0.020        $ Temperature (K)
+.param Phi0=2.0678e-15 $ Flux quantum (Wb)
+
+* Qubit frequencies (set by JJ area → EJ, pad gap → EC)
+.param f_Q0=4.8G  f_Q1=5.1G  f_Q2=5.4G  f_Q3=5.7G
+.param f_R0=6.5G  f_R1=6.7G  f_R2=6.9G  f_R3=7.1G
+
+* Coupling strengths
+.param g0=80M  g1=80M  g2=80M  g3=80M     $ qubit-resonator (Hz)
+.param J01=5M  J12=5M  J23=5M             $ qubit-qubit (Hz)
+
+* Qubit intrinsic parameters (EC=250MHz, EJ/EC=60)
+.param EC=250M  EJ_EC=60
+.param EJ={EJ_EC*EC}
+
+* JJ parameters derived from f_Q0
+.param Ic_Q0={2*3.14159*EJ*Phi0/(6.626e-34) * 1e-9}  $ nA → A TODO verify
+.param Rn_Q0={1000/(Ic_Q0*1e9 * 0.09)}              $ Rn*A / A_jj
+.param Cs_Q0={1e-15*80}                              $ 80 fF shunt cap
+
+* ── Transmon subcircuit (parameterized) ──────────────────────
+.subckt TRANSMON_Q  drive readout gnd PARAMS:
++  Ic=120n Rn=8000 Cs=80f Cg=3.5f Cd=0.5f
+
+* Josephson junction (RCSJ model)
+XJJQ  NA NB  JJ_RCSJ  Ic={Ic} Rn={Rn} Cjj={45e-15*Ic/(800e-9*0.09)}
+
+* Shunt capacitor (pads)
+Cshunt  NA NB {Cs}
+
+* Coupling to readout resonator
+Ccoup   readout NA {Cg}
+
+* Coupling to drive line
+Cdrive  drive NA {Cd}
+
+* Ground
+Rg NB gnd 1m
+
+.ends TRANSMON_Q
+
+* ── Readout resonator + Purcell filter subcircuit ─────────────
+.subckt READOUT_CHAIN  qb_port feed_in feed_out gnd PARAMS:
++  fr=6.5G Qi=1e5 Qc=3000 BW_PF=200M
+
+* Resonator lumped model
+.param omega_r={2*3.14159*fr}
+.param Cr_val={1/(omega_r*Z0)}
+.param Lr_val={1/(omega_r**2*Cr_val)}
+.param Rr_val={Lr_val*omega_r/Qi}
+
+Lr_r  Nres_a Nres_b  {Lr_val}
+Cr_r  Nres_b Nres_c  {Cr_val}
+Rr_r  Nres_c gnd     {Rr_val}
+
+* Coupling cap resonator ↔ qubit
+.param Cg_rq={1e-15/(Qc*omega_r*Z0) * 3.0}
+Cgq  qb_port Nres_a  {Cg_rq}
+
+* Purcell filter: bandpass stub model (simplified as series RLC bandpass)
+.param omega_pf={2*3.14159*fr}
+.param Cpf={BW_PF/(Z0*omega_pf**2)}
+.param Lpf={1/(omega_pf**2*Cpf)}
+.param Rpf={Z0}
+
+Lpf_s  feed_in  Npf_a  {Lpf}
+Cpf_s  Npf_a   Npf_b  {Cpf}
+Rpf_s  Npf_b   gnd    {Rpf}
+
+* Coupling PF → feedline
+.param Cc_pf={1e-15*5}
+Cc_pf  Nres_a  Npf_a  {Cc_pf}
+
+* Feedline termination
+Rterm_in   feed_in  gnd {Z0}
+Rterm_out  feed_out gnd {Z0}
+Cc_out  Nres_a feed_out {Cc_pf}
+
+.ends READOUT_CHAIN
+
+* ── SQUID tunable coupler ─────────────────────────────────────
+.subckt TUNABLE_COUPLER  qa qb flux gnd PARAMS:
++  Jmax=10M Lj=50p
+
+* Tunable coupler: SQUID acting as flux-controlled inductor
+* Leff(Φ) = Lj / cos(π Φ/Φ0) — linearized near sweet spot
+
+* Simplified: voltage-controlled inductor
+* For small signals, Zc(ω,Φ) ≈ jωLeff(Φ)
+Lc  qa qb {Lj}   $ TODO: make flux-controlled
+
+* Shunt cap for impedance matching
+Cc  qa gnd 1f
+
+.ends TUNABLE_COUPLER
+
+* ══════════════════════════════════════════════════════════════
+* TOP LEVEL: 4-Qubit Repeater Node
+* ══════════════════════════════════════════════════════════════
+
+* ── Qubit 0 (fixed frequency, 4.8 GHz) ───────────────────────
+XQ0  Vdrive0  Vro0  GND  TRANSMON_Q
++    Ic=60n Rn=16000 Cs=80f Cg=3.5f Cd=0.5f
+
+* ── Qubit 1 (tunable, 5.1 GHz) ──────────────────────────────
+XQ1  Vdrive1  Vro1  GND  TRANSMON_Q
++    Ic=90n Rn=11000 Cs=80f Cg=3.5f Cd=0.5f
+
+* ── Qubit 2 (fixed, 5.4 GHz) ────────────────────────────────
+XQ2  Vdrive2  Vro2  GND  TRANSMON_Q
++    Ic=120n Rn=8000 Cs=80f Cg=3.5f Cd=0.5f
+
+* ── Qubit 3 (tunable, 5.7 GHz) ──────────────────────────────
+XQ3  Vdrive3  Vro3  GND  TRANSMON_Q
++    Ic=155n Rn=6500 Cs=80f Cg=3.5f Cd=0.5f
+
+* ── Readout chains ───────────────────────────────────────────
+XRO0  Vro0  Vfeed_in  Vout0  GND  READOUT_CHAIN  fr=6.5G
+XRO1  Vro1  Vfeed_in  Vout1  GND  READOUT_CHAIN  fr=6.7G
+XRO2  Vro2  Vfeed_in  Vout2  GND  READOUT_CHAIN  fr=6.9G
+XRO3  Vro3  Vfeed_in  Vout3  GND  READOUT_CHAIN  fr=7.1G
+
+* ── Tunable couplers ─────────────────────────────────────────
+XC01  Vro0  Vro1  Vflux01  GND  TUNABLE_COUPLER  Jmax=10M
+XC12  Vro1  Vro2  Vflux12  GND  TUNABLE_COUPLER  Jmax=10M
+XC23  Vro2  Vro3  Vflux23  GND  TUNABLE_COUPLER  Jmax=10M
+
+* ── Feedline ─────────────────────────────────────────────────
+Vrf   Vfeed_in  GND  AC 1  SIN(0 1n 6.5G)
+Rload Vout0 GND {Z0}
+
+* ── Flux bias sources (DC) ───────────────────────────────────
+Vflux01  Vflux01  GND  DC 0   $ Coupler 0-1 bias
+Vflux12  Vflux12  GND  DC 0   $ Coupler 1-2 bias
+Vflux23  Vflux23  GND  DC 0   $ Coupler 2-3 bias
+
+* ── Drive sources ────────────────────────────────────────────
+Vd0  Vdrive0  GND  AC 0  SIN(0 0.1n 4.8G)
+Vd1  Vdrive1  GND  AC 0  SIN(0 0.1n 5.1G)
+Vd2  Vdrive2  GND  AC 0  SIN(0 0.1n 5.4G)
+Vd3  Vdrive3  GND  AC 0  SIN(0 0.1n 5.7G)
+
+* ── Analysis ─────────────────────────────────────────────────
+* Frequency sweep (S21 through readout chain 0)
+.ac dec 500 3G 9G
+
+* Transient: check Rabi oscillation of Q0
+.tran 0.01n 500n
+
+* Noise analysis
+.noise V(Vout0) Vrf dec 200 4G 8G
+
+* ── Output ───────────────────────────────────────────────────
+.print ac  Vdb(Vout0) Vdb(Vout1) Vdb(Vout2) Vdb(Vout3)
+.print ac  Vphase(Vout0)
+.print tran V(Vdrive0) V(Vout0)
+.measure ac S21_0 find Vdb(Vout0) at 6.5G
+.measure ac S21_1 find Vdb(Vout1) at 6.7G
+
+.end
